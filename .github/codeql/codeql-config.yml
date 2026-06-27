@@ -1,0 +1,7 @@
+name: "CodeQL config for mcp-auth-go"
+
+# Vendored third-party source is not our code to fix; exclude it so findings
+# stay actionable. CodeQL still analyzes all first-party Go across every module.
+paths-ignore:
+  - vendor
+  - "**/vendor"

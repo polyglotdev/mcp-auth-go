@@ -1,0 +1,113 @@
+# CI gate: the same fmt/vet/lint/race checks as `make check`, run across every
+# module on every push and pull request. CI and local stay equivalent because
+# both drive the repository Makefile and the same .golangci.yml.
+#
+# Hardening (see SECURITY.md): all actions are pinned to immutable commit SHAs,
+# every job is least-privilege (contents: read), runs on a pinned runner image,
+# starts with step-security/harden-runner, sets a timeout, checks out without
+# persisting credentials, and superseded runs are cancelled via concurrency.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  # Reusable: release.yml calls this so a tag re-runs the exact same gate as a
+  # release precondition (no duplicated check logic).
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: gofmt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: gofmt (path-based, whole tree)
+        run: make fmt-check
+
+  module-coverage:
+    name: module coverage guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Assert every Go module is covered by the CI matrix
+        # The authoritative module list below mirrors Makefile GO_MODULE_DIRS and
+        # the 'gate' job matrix. Adding a module without updating all three fails
+        # here, so a new module can never silently escape vet/lint/race/scanning.
+        run: |
+          set -euo pipefail
+          expected=$(printf '%s\n' "." "transport/mcpauth" "audit/otel" "dpop/redisreplay" | sort -u)
+          found=$(find . -name go.mod -not -path '*/vendor/*' \
+            | sed -E 's#/go\.mod$##; s#^\./##; s#^$#.#' \
+            | sort -u)
+          if [ "$expected" != "$found" ]; then
+            echo "::error::Go module set drift detected. Update Makefile GO_MODULE_DIRS, the ci.yml matrix, and this guard together."
+            echo "--- expected ---"; echo "$expected"
+            echo "--- found ---"; echo "$found"
+            exit 1
+          fi
+          echo "Module coverage OK:"; echo "$found"
+
+  gate:
+    name: vet/lint/race
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [".", "transport/mcpauth", "audit/otel", "dpop/redisreplay"]
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: go vet (${{ matrix.module }})
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+      - name: golangci-lint (${{ matrix.module }})
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        with:
+          version: v2.12.2
+          working-directory: ${{ matrix.module }}
+      - name: go test -race (${{ matrix.module }})
+        working-directory: ${{ matrix.module }}
+        run: go test -race -count=1 ./...

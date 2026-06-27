@@ -1,5 +1,8 @@
 # mcp-auth-go
 
+[![CI](https://github.com/polyglotdev/mcp-auth-go/actions/workflows/ci.yml/badge.svg)](https://github.com/polyglotdev/mcp-auth-go/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/polyglotdev/mcp-auth-go/actions/workflows/codeql.yml/badge.svg)](https://github.com/polyglotdev/mcp-auth-go/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/polyglotdev/mcp-auth-go/badge)](https://scorecard.dev/viewer/?uri=github.com/polyglotdev/mcp-auth-go)
 [![Go Reference](https://pkg.go.dev/badge/github.com/polyglotdev/mcp-auth-go.svg)](https://pkg.go.dev/github.com/polyglotdev/mcp-auth-go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/polyglotdev/mcp-auth-go)](https://goreportcard.com/report/github.com/polyglotdev/mcp-auth-go)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)

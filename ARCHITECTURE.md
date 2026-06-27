@@ -8,7 +8,7 @@ policy.
 
 ## Package layout
 
-```
+```bash
 github.com/polyglotdev/mcp-auth-go            ← core (package auth)
 ├── errors.go        *Error model + sentinels (incl. ErrForbidden, ErrInvalidDPoPProof)
 ├── claims.go        Claims type + claimsFromToken / scope parsing
@@ -65,7 +65,7 @@ The `transport/mcpauth` adapter is a separate nested module
 (`github.com/polyglotdev/mcp-auth-go/transport/mcpauth`) so the MCP Go SDK
 dependency never enters the core module's graph.
 
-```
+```bash
 transport/mcpauth/
 ├── verifier.go      NewTokenVerifier / newVerifierFunc / RawTokenFromContext / ClaimsFromContext
 │                    DPoP enforcement via Options.DPoP (calls dpop.Verifier.Enforce)
@@ -81,7 +81,7 @@ The `audit/otel` adapter is likewise a separate nested module
 dependency never enters the core module's graph (the adapter compiles against
 the OTel **API** only; the SDK is a test-only dependency).
 
-```
+```bash
 audit/otel/
 ├── sink.go         NewSink / Config — Event → Int64 counter + active-span event
 └── doc.go          package overview (OTel API only; SDK is test-only)
@@ -92,7 +92,7 @@ The `dpop/redisreplay` adapter is likewise a separate nested module
 (`go-redis`) never enters the core module's graph — a Redis-backed
 `dpop.ReplayCache` for cross-instance DPoP proof single-use.
 
-```
+```bash
 dpop/redisreplay/
 ├── cache.go            ReplayCache / Config / New / FailMode — SeenBefore via atomic SET NX
 ├── doc.go              package overview (go-redis; miniredis test-only)
@@ -101,7 +101,7 @@ dpop/redisreplay/
 
 ### Dependency direction (one-way, enforced)
 
-```
+```bash
 dpop            ──▶  auth (core)  ──▶  jwx, stdlib
 audit           ──▶  stdlib only                         (imports NO auth — a pure leaf)
 exchange        ──▶  auth (core), audit (core)
@@ -154,7 +154,7 @@ parse; the first error short-circuits and is returned unchanged so the
 transport can map it to the right status. The library ships one ready-made
 verifier, `VerifyRequiredStringClaims(map[string]string)`, which reproduces the
 old behavior generically — the Atlassian gateway's policy becomes one line of
-*caller* configuration:
+_caller_ configuration:
 
 ```go
 Verifiers: []auth.ClaimVerifier{
@@ -177,8 +177,7 @@ still satisfies `errors.Is(err, ErrForbidden)`). `Cause` and `HTTPStatus` are
 
 The only generalization: the Bedrock-specific `ErrBedrockRequired` (which
 carried a Bedrock runbook `DocURL`) became the generic `ErrForbidden`. The
-authn sentinels (`ErrMissingToken`, `ErrInvalidToken`, `ErrExpiredToken`, all
-401) and the 429s (`ErrSessionLimitExceeded`, `ErrRateLimitExceeded`) are
+authn sentinels (`ErrMissingToken`, `ErrInvalidToken`, `ErrExpiredToken`, all 401) and the 429s (`ErrSessionLimitExceeded`, `ErrRateLimitExceeded`) are
 unchanged.
 
 ## Behavior change: `Claims.Backend` removed
@@ -264,8 +263,8 @@ denied immediately (§4.3 step 1 of the check loop in `checkProof`).
 
 Setting `Config.Nonce` makes a valid resource-server nonce **required** on every
 enforced proof (a stricter, stateless reading of the §11.3 MUST). The nonce
-check sits inside `checkProof` *after* the thumbprint match (so a forged proof
-never earns a fresh nonce) and *before* the replay check (so a nonce-less proof
+check sits inside `checkProof` _after_ the thumbprint match (so a forged proof
+never earns a fresh nonce) and _before_ the replay check (so a nonce-less proof
 is not recorded — the client retries with a new `jti`). A missing, stale, or
 forged nonce returns the distinct `auth.ErrUseDPoPNonce` sentinel; `transport/http`
 answers `401` with `WWW-Authenticate: DPoP error="use_dpop_nonce"` and a
@@ -386,7 +385,7 @@ or log output.
 ## Audit & observability
 
 The `audit` package is the "Logging Service" seam: a typed `audit.Event`
-recorded at the two security *decision* points and handed to a pluggable
+recorded at the two security _decision_ points and handed to a pluggable
 `audit.Sink`.
 
 **Two emission points, one vocabulary.** `transport/mcpauth.ToolGate` emits a
@@ -431,13 +430,13 @@ module never imports OpenTelemetry.
 
 ## Testing structure
 
-| Test | Package | Rationale |
-|------|---------|-----------|
-| `errors_test.go`, `verifier_test.go`, `validator_test.go` | `auth_test` (black-box) | exercise the public API as a consumer would; can import `internal/jwkstest` without an import cycle |
-| `session_test.go` | `auth` (white-box) | tests the unexported `randomSessionID` |
-| `dpop/*_test.go` | `dpop` (white-box) + `dpop_test` (black-box) | white-box: `checkProof`, replay, mode logic; black-box: `ExampleNewVerifier`, no-leak assertion, skip-guarded live Okta test |
-| `transport/http/middleware_test.go` | `http` (white-box) | tests the unexported `extractBearer` / `setRetryAfter`; DPoP path tests (bound+valid, bound+no-proof, opportunistic, require, BaseURL) |
-| `transport/http/metadata_test.go` | `http` (white-box) | shares the package's `discardLogger` helper |
+| Test                                                      | Package                                      | Rationale                                                                                                                              |
+| --------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `errors_test.go`, `verifier_test.go`, `validator_test.go` | `auth_test` (black-box)                      | exercise the public API as a consumer would; can import `internal/jwkstest` without an import cycle                                    |
+| `session_test.go`                                         | `auth` (white-box)                           | tests the unexported `randomSessionID`                                                                                                 |
+| `dpop/*_test.go`                                          | `dpop` (white-box) + `dpop_test` (black-box) | white-box: `checkProof`, replay, mode logic; black-box: `ExampleNewVerifier`, no-leak assertion, skip-guarded live Okta test           |
+| `transport/http/middleware_test.go`                       | `http` (white-box)                           | tests the unexported `extractBearer` / `setRetryAfter`; DPoP path tests (bound+valid, bound+no-proof, opportunistic, require, BaseURL) |
+| `transport/http/metadata_test.go`                         | `http` (white-box)                           | shares the package's `discardLogger` helper                                                                                            |
 
 `internal/jwkstest` exists because both the core and the transport test suites
 need to mint signed JWTs against a live JWKS endpoint. It imports only `jwx`
@@ -465,12 +464,14 @@ When the Atlassian gateway adopts this module, the change is mechanical:
    `ProtectedResourceMetadata`, `MetadataPath`) to the `authhttp` alias.
 3. Define the Bedrock policy in the gateway (it is product policy, not library
    code) and pass it as a verifier:
+
    ```go
    const bedrockClaim, bedrockValue = "claude_backend", "bedrock"
    cfg.Verifiers = []auth.ClaimVerifier{
        auth.VerifyRequiredStringClaims(map[string]string{bedrockClaim: bedrockValue}),
    }
    ```
+
 4. Replace any read of `claims.Backend` with `claims.Raw["claude_backend"]`.
 5. Replace `errors.Is(err, auth.ErrBedrockRequired)` checks with
    `errors.Is(err, auth.ErrForbidden)`. If the gateway needs the Bedrock

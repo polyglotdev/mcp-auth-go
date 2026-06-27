@@ -1,0 +1,50 @@
+# zizmor audits our OWN GitHub Actions workflows for the exact attack classes
+# this whole CI effort exists to prevent: template injection, excessive
+# permissions, credential persistence, unpinned actions, dangerous triggers.
+# A security library with a compromisable pipeline is a contradiction, so we
+# lint our pipeline with the same tool an attacker would use.
+#
+# Policy: BLOCKING on high-severity findings (per the chosen hybrid policy).
+# Results are also published to the Security tab. The zizmor version is pinned
+# transitively: the SHA-pinned action runs a digest-pinned zizmor container.
+name: zizmor
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zizmor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor:
+    name: zizmor (workflow audit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Run zizmor
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        with:
+          # Audit the whole repo (workflows, composite actions, dependabot.yml).
+          inputs: "."
+          # Block only on high-severity findings; lower findings still surface in
+          # the Security tab summary. Lower this threshold to tighten the gate.
+          min-severity: high

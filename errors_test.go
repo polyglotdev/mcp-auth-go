@@ -42,13 +42,13 @@ func TestErrorPreservesHTTPStatus(t *testing.T) {
 		{name: "use dpop nonce is 401", sentinel: auth.ErrUseDPoPNonce, want: http.StatusUnauthorized},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			if tc.sentinel.HTTPStatus != tc.want {
-				t.Errorf("%s status = %d, want %d", tc.sentinel.Code, tc.sentinel.HTTPStatus, tc.want)
+				st.Errorf("%s status = %d, want %d", tc.sentinel.Code, tc.sentinel.HTTPStatus, tc.want)
 			}
 			wrapped := tc.sentinel.With(errors.New("x"))
 			if wrapped.HTTPStatus != tc.want {
-				t.Errorf("wrapped %s status = %d, want %d", tc.sentinel.Code, wrapped.HTTPStatus, tc.want)
+				st.Errorf("wrapped %s status = %d, want %d", tc.sentinel.Code, wrapped.HTTPStatus, tc.want)
 			}
 		})
 	}
@@ -77,16 +77,16 @@ func TestErrorMessage(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			got := tc.err.Error()
 			for _, w := range tc.want {
 				if !strings.Contains(got, w) {
-					t.Errorf("Error() = %q, missing %q", got, w)
+					st.Errorf("Error() = %q, missing %q", got, w)
 				}
 			}
 			for _, nw := range tc.notWant {
 				if strings.Contains(got, nw) {
-					t.Errorf("Error() = %q, should not contain %q", got, nw)
+					st.Errorf("Error() = %q, should not contain %q", got, nw)
 				}
 			}
 		})
@@ -129,9 +129,9 @@ func TestErrUseDPoPNonce(t *testing.T) {
 		{name: "distinct from invalid_dpop_proof", target: auth.ErrInvalidDPoPProof, want: false},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			if got := errors.Is(wrapped, tc.target); got != tc.want {
-				t.Errorf("errors.Is(wrapped, %s) = %v, want %v", tc.target.Code, got, tc.want)
+				st.Errorf("errors.Is(wrapped, %s) = %v, want %v", tc.target.Code, got, tc.want)
 			}
 		})
 	}

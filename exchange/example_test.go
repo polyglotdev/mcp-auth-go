@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	auth "github.com/polyglotdev/mcp-auth-go"
 	"github.com/polyglotdev/mcp-auth-go/exchange"
@@ -53,4 +54,29 @@ func ExampleExchanger_TokenForCaller() {
 		fmt.Println("no caller token: fail closed")
 	}
 	// Output: no caller token: fail closed
+}
+
+// ExampleNewMemoryCache shows the per-process token cache the Exchanger uses by
+// default. Entries are keyed by a caller-derived key (never the token bytes) and
+// treated as stale a leeway before their ExpiresAt, so a token is refreshed
+// before it actually expires. A nil clock uses time.Now; inject one for tests.
+func ExampleNewMemoryCache() {
+	now := time.Unix(1000, 0)
+	cache := exchange.NewMemoryCache(func() time.Time { return now }, 30*time.Second)
+
+	cache.Set("user-1|api://downstream|ds:read", &exchange.Token{
+		AccessToken: "downstream-token",
+		ExpiresAt:   now.Add(time.Hour),
+	})
+
+	if tok, ok := cache.Get("user-1|api://downstream|ds:read"); ok {
+		fmt.Println("cache hit:", tok.AccessToken)
+	}
+	if _, ok := cache.Get("user-2|api://downstream|ds:read"); !ok {
+		fmt.Println("different caller: miss")
+	}
+
+	// Output:
+	// cache hit: downstream-token
+	// different caller: miss
 }

@@ -1,0 +1,30 @@
+# golangci-lint v2 configuration.
+# Default set (errcheck, govet, ineffassign, staticcheck, unused) plus the
+# higher-signal linters called for in AGENTS.md §3.1.2.
+version: "2"
+
+linters:
+  enable:
+    - bodyclose
+    - contextcheck
+    - errorlint
+    - gocritic
+    - gosec
+    - nilerr
+    - revive
+  exclusions:
+    rules:
+      # crypto/rand and an httptest server inside the JWKS test helper are
+      # test scaffolding, not production attack surface.
+      - path: internal/jwkstest/
+        linters:
+          - gosec
+      # Test files legitimately use unchecked helpers and fixed inputs.
+      - path: _test\.go
+        linters:
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

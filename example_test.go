@@ -165,3 +165,81 @@ func ExampleNewMemorySessionStore() {
 	// third rejected: true
 	// alice sessions: 2
 }
+
+// ExampleHasScopes shows the standalone scope authorizer: it allows a caller
+// whose Claims carry every required scope and returns ErrInsufficientScope
+// otherwise. An Authorizer runs against typed Claims, for example at an MCP
+// per-tool gate (see the transport/mcpauth ToolGate).
+func ExampleHasScopes() {
+	authz := auth.HasScopes("mcp:read", "mcp:write")
+
+	full := &auth.Claims{Scopes: []string{"mcp:read", "mcp:write"}}
+	readOnly := &auth.Claims{Scopes: []string{"mcp:read"}}
+
+	fmt.Println("full access allowed:", authz(context.Background(), full) == nil)
+	fmt.Println("read-only allowed:", authz(context.Background(), readOnly) == nil)
+	fmt.Println("insufficient scope:", errors.Is(authz(context.Background(), readOnly), auth.ErrInsufficientScope))
+
+	// Output:
+	// full access allowed: true
+	// read-only allowed: false
+	// insufficient scope: true
+}
+
+// ExampleRequireScopes shows the scope-checking ClaimVerifier you inject into
+// ValidatorConfig.Verifiers. It accepts Okta's space-delimited "scope" string
+// (or the array "scp" claim) and rejects a token missing any required scope
+// with ErrInsufficientScope (HTTP 403) -- a transport maps that to an RFC 6750
+// insufficient_scope challenge so the client can request step-up authorization.
+func ExampleRequireScopes() {
+	verify := auth.RequireScopes("mcp:read", "mcp:write")
+
+	// Build two unsigned tokens to illustrate; in production the validator hands
+	// the already-verified token to the verifier for you.
+	full, _ := jwt.NewBuilder().Claim("scope", "mcp:read mcp:write").Build()
+	readOnly, _ := jwt.NewBuilder().Claim("scope", "mcp:read").Build()
+
+	fmt.Println("full granted:", verify(context.Background(), full) == nil)
+
+	if err := verify(context.Background(), readOnly); errors.Is(err, auth.ErrInsufficientScope) {
+		fmt.Println("read-only rejected: insufficient scope")
+	}
+
+	// Output:
+	// full granted: true
+	// read-only rejected: insufficient scope
+}
+
+// ExampleNewMultiValidator shows fronting two Okta authorization servers behind
+// one validator. NewMultiValidator fetches each issuer's JWKS synchronously, so
+// a misconfigured issuer fails fast here; Validate then routes each token to the
+// Validator matching its (unverified) iss before any signature check runs.
+func ExampleNewMultiValidator() {
+	ctx := context.Background()
+
+	v, err := auth.NewMultiValidator(ctx, auth.MultiValidatorConfig{
+		Issuers: []auth.ValidatorConfig{
+			{
+				JWKSURL:  "https://team-a.okta.com/oauth2/aus1a2b3c/v1/keys",
+				Issuer:   "https://team-a.okta.com/oauth2/aus1a2b3c",
+				Audience: "https://mcp.internal.acme.com",
+			},
+			{
+				JWKSURL:  "https://team-b.okta.com/oauth2/aus4d5e6f/v1/keys",
+				Issuer:   "https://team-b.okta.com/oauth2/aus4d5e6f",
+				Audience: "https://mcp.internal.acme.com",
+			},
+		},
+	})
+	if err != nil {
+		log.Fatalf("auth: init: %v", err)
+	}
+
+	// bearer is the token from an incoming request's Authorization header.
+	var bearer string
+	claims, err := v.Validate(ctx, bearer)
+	if err != nil {
+		log.Fatalf("auth: reject: %v", err)
+	}
+	fmt.Println("authenticated:", claims.Subject, "via", claims.Issuer)
+}

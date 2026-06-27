@@ -1,0 +1,84 @@
+# .gitignore — github.com/polyglotdev/mcp-auth-go
+#
+# Keep the published module clean: only Go source, module files, license, and
+# docs belong on pkg.go.dev. Everything below is local-only dev tooling,
+# generated output, secrets, or AI-assistant state that must never be committed.
+
+# ---------------------------------------------------------------------------
+# AI assistant tooling, instructions & planning artifacts (never published)
+# ---------------------------------------------------------------------------
+.claude/
+.cursor/
+.cursorrules
+.aider*
+.continue/
+.windsurf/
+.windsurfrules
+.spartan/
+.agents/
+.planning/
+.handoff/
+.memory/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+skills-lock.json
+
+# ---------------------------------------------------------------------------
+# Secrets & local environment — NEVER commit
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# ---------------------------------------------------------------------------
+# Compiled binaries & shared objects
+# ---------------------------------------------------------------------------
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/dist/
+
+# ---------------------------------------------------------------------------
+# Test, coverage & profiling output
+# ---------------------------------------------------------------------------
+*.test
+*.out
+coverage.*
+*.prof
+*.pprof
+*.log
+
+# ---------------------------------------------------------------------------
+# Go workspace files (this is a published module set, not a local workspace)
+# ---------------------------------------------------------------------------
+go.work
+go.work.sum
+
+# ---------------------------------------------------------------------------
+# Vendored deps (we rely on the module cache; vendor only if explicitly added)
+# ---------------------------------------------------------------------------
+/vendor/
+
+# ---------------------------------------------------------------------------
+# Editor & OS noise
+# ---------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

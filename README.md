@@ -34,6 +34,27 @@ The core package is transport-neutral; the HTTP package depends on it, never
 the reverse. See [ARCHITECTURE.md](ARCHITECTURE.md) for the design and the
 authentication-vs-authorization split.
 
+## Packages
+
+Everything except three opt-in adapters lives in the **core module**
+(`go get github.com/polyglotdev/mcp-auth-go`), whose only third-party
+dependency is `jwx/v2`. The three adapters that pull a heavier dependency each
+ship as a **separate nested module** (the last three rows), so that dependency
+never enters the core graph unless you import the adapter. Paths are relative to
+the module root `github.com/polyglotdev/mcp-auth-go`.
+
+| Import path | Purpose | Added dependency |
+| --- | --- | --- |
+| `.` | JWT/JWKS validation, typed `Claims`, authorizers, sessions | `jwx/v2` |
+| `transport/http` | `net/http` middleware, RFC 9728 metadata | none |
+| `introspection` | RFC 7662 opaque-token validation | none |
+| `dpop` | RFC 9449 proof-of-possession | none |
+| `exchange` | RFC 8693 exchange, Cross App Access client | none |
+| `audit` | the `audit.Sink` seam and `Event` | none |
+| `transport/mcpauth` | MCP Go SDK adapter, `ToolGate` | MCP Go SDK |
+| `audit/otel` | OpenTelemetry audit sink | OpenTelemetry API |
+| `dpop/redisreplay` | Redis-backed DPoP replay cache | go-redis |
+
 ## Install
 
 ```sh
@@ -52,64 +73,69 @@ MCP Go SDK instead? See [Use with the official MCP Go SDK](#use-with-the-officia
 package main
 
 import (
-	"context"
-	"log/slog"
-	"net/http"
-	"os"
+  "context"
+  "log/slog"
+  "net/http"
+  "os"
 
-	auth "github.com/polyglotdev/mcp-auth-go"
-	authhttp "github.com/polyglotdev/mcp-auth-go/transport/http"
+  auth "github.com/polyglotdev/mcp-auth-go"
+  authhttp "github.com/polyglotdev/mcp-auth-go/transport/http"
 )
 
 func main() {
-	ctx := context.Background()
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+  ctx := context.Background()
+  logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	// The validator owns a JWKS cache; the initial fetch is synchronous so a
-	// misconfigured issuer fails fast at startup.
-	v, err := auth.NewValidator(ctx, auth.ValidatorConfig{
-		JWKSURL:  "https://acme.okta.com/oauth2/aus123/v1/keys",
-		Issuer:   "https://acme.okta.com/oauth2/aus123",
-		Audience: "https://mcp.internal.acme.com",
-		// Authorization policy is injected, not built in. This one requires a
-		// claude_backend=bedrock claim; supply your own as needed.
-		Verifiers: []auth.ClaimVerifier{
-			auth.VerifyRequiredStringClaims(map[string]string{"claude_backend": "bedrock"}),
-		},
-	})
-	if err != nil {
-		logger.Error("auth init failed", slog.Any("err", err))
-		os.Exit(1)
-	}
+  // The validator owns a JWKS cache; the initial fetch is synchronous so a
+  // misconfigured issuer fails fast at startup.
+  v, err := auth.NewValidator(ctx, auth.ValidatorConfig{
+    JWKSURL:  "https://acme.okta.com/oauth2/aus123/v1/keys",
+    Issuer:   "https://acme.okta.com/oauth2/aus123",
+    Audience: "https://mcp.internal.acme.com",
+    // Authorization policy is injected, not built in. This one requires a
+    // claude_backend=bedrock claim; supply your own as needed.
+    Verifiers: []auth.ClaimVerifier{
+      auth.VerifyRequiredStringClaims(map[string]string{"claude_backend": "bedrock"}),
+    },
+  })
+  if err != nil {
+    logger.Error("auth init failed", slog.Any("err", err))
+    os.Exit(1)
+  }
 
-	mcp := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims := auth.MustClaims(r.Context()) // panics if middleware is bypassed
-		logger.Info("request", slog.String("sub", claims.Subject))
-		w.WriteHeader(http.StatusOK)
-	})
+  mcp := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    claims := auth.MustClaims(r.Context()) // panics if middleware is bypassed
+    logger.Info("request", slog.String("sub", claims.Subject))
+    w.WriteHeader(http.StatusOK)
+  })
 
-	mw := authhttp.MiddlewareConfig{
-		Validator: v,
-		Logger:    logger,
-		// RFC 9728 pointer echoed in the WWW-Authenticate challenge on a 401,
-		// so a client can discover the authorization server.
-		ResourceMetadataURL: "https://mcp.internal.acme.com" + authhttp.MetadataPath,
-	}.Middleware()
+  mw := authhttp.MiddlewareConfig{
+    Validator: v,
+    Logger:    logger,
+    // RFC 9728 pointer echoed in the WWW-Authenticate challenge on a 401,
+    // so a client can discover the authorization server.
+    ResourceMetadataURL: "https://mcp.internal.acme.com" + authhttp.MetadataPath,
+  }.Middleware()
 
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", mw(mcp))
-	mux.HandleFunc(authhttp.MetadataPath, authhttp.MetadataHandler(logger, authhttp.ProtectedResourceMetadata{
-		Resource:               "https://mcp.internal.acme.com",
-		AuthorizationServers:   []string{"https://acme.okta.com/oauth2/aus123"},
-		BearerMethodsSupported: []string{"header"},
-		ScopesSupported:        []string{"mcp:read", "mcp:write"},
-	}))
+  mux := http.NewServeMux()
+  mux.Handle("/mcp", mw(mcp))
+  mux.HandleFunc(authhttp.MetadataPath, authhttp.MetadataHandler(logger, authhttp.ProtectedResourceMetadata{
+    Resource:               "https://mcp.internal.acme.com",
+    AuthorizationServers:   []string{"https://acme.okta.com/oauth2/aus123"},
+    BearerMethodsSupported: []string{"header"},
+    ScopesSupported:        []string{"mcp:read", "mcp:write"},
+  }))
 
-	if err := http.ListenAndServe(":8080", mux); err != nil {
-		logger.Error("server stopped", slog.Any("err", err))
-	}
+  if err := http.ListenAndServe(":8080", mux); err != nil {
+    logger.Error("server stopped", slog.Any("err", err))
+  }
 }
 ```
+
+When the MCP endpoint is mounted under a sub-path (for example `/mcp`), serve its
+metadata at the RFC 9728 section 3 path-aware location returned by
+`authhttp.MetadataPathFor("/mcp")` rather than the root `MetadataPath`, and point
+`ResourceMetadataURL` at that same location.
 
 ## Multi-issuer validation
 
@@ -122,19 +148,19 @@ checks.
 
 ```go
 mv, err := auth.NewMultiValidator(ctx, auth.MultiValidatorConfig{
-	Issuers: []auth.ValidatorConfig{
-		{ // outgoing IdP (kept during a cutover window)
-			JWKSURL:  "https://old.okta.com/oauth2/aus_old/v1/keys",
-			Issuer:   "https://old.okta.com/oauth2/aus_old",
-			Audience: "https://mcp.internal.acme.com",
-		},
-		{ // incoming IdP
-			JWKSURL:   "https://new.okta.com/oauth2/aus_new/v1/keys",
-			Issuer:    "https://new.okta.com/oauth2/aus_new",
-			Audience:  "https://mcp.internal.acme.com",
-			Verifiers: []auth.ClaimVerifier{auth.RequireScopes("mcp:read")},
-		},
-	},
+  Issuers: []auth.ValidatorConfig{
+    { // outgoing IdP (kept during a cutover window)
+      JWKSURL:  "https://old.okta.com/oauth2/aus_old/v1/keys",
+      Issuer:   "https://old.okta.com/oauth2/aus_old",
+      Audience: "https://mcp.internal.acme.com",
+    },
+    { // incoming IdP
+      JWKSURL:   "https://new.okta.com/oauth2/aus_new/v1/keys",
+      Issuer:    "https://new.okta.com/oauth2/aus_new",
+      Audience:  "https://mcp.internal.acme.com",
+      Verifiers: []auth.ClaimVerifier{auth.RequireScopes("mcp:read")},
+    },
+  },
 })
 if err != nil { /* ... */ }
 
@@ -168,11 +194,11 @@ does, so it drops into the same transports.
 
 ```go
 iv, err := introspection.NewValidator(introspection.Config{
-	IntrospectionURL: "https://acme.okta.com/oauth2/default/v1/introspect",
-	ClientAuth:       introspection.BasicAuth{ClientID: id, ClientSecret: secret},
-	Issuer:           "https://acme.okta.com/oauth2/default",
-	Audience:         "https://mcp.internal.acme.com",
-	// Cache: introspection.NewMemoryCache(time.Now, 30*time.Second), // opt-in
+  IntrospectionURL: "https://acme.okta.com/oauth2/default/v1/introspect",
+  ClientAuth:       introspection.BasicAuth{ClientID: id, ClientSecret: secret},
+  Issuer:           "https://acme.okta.com/oauth2/default",
+  Audience:         "https://mcp.internal.acme.com",
+  // Cache: introspection.NewMemoryCache(time.Now, 30*time.Second), // opt-in
 })
 if err != nil { /* ... */ }
 
@@ -185,9 +211,13 @@ mw := authhttp.MiddlewareConfig{Validator: iv, Logger: logger}.Middleware()
 The validator POSTs the token (with the configured client authentication) to the
 endpoint, then **confirms the returned `iss` and `aud` itself** — by exact match,
 failing closed if either is absent (an introspection endpoint can report a token
-minted for a *different* resource as `active`, so the resource server must verify
+minted for a _different_ resource as `active`, so the resource server must verify
 the audience). The opaque token is treated as a secret: it never appears in a
 log, an error, or an un-hashed cache key.
+
+Authenticate to the endpoint with `introspection.BasicAuth` (client_secret_basic)
+or `introspection.FormPost` (client_secret_post); both satisfy the required
+`ClientAuth` field.
 
 **Caching is opt-in and off by default.** With no `Cache`, every request
 introspects, so a token revoked at the authorization server is rejected
@@ -217,15 +247,15 @@ go get github.com/polyglotdev/mcp-auth-go/transport/mcpauth
 
 ```go
 import (
-	auth "github.com/polyglotdev/mcp-auth-go"
-	"github.com/polyglotdev/mcp-auth-go/transport/mcpauth"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+  auth "github.com/polyglotdev/mcp-auth-go"
+  "github.com/polyglotdev/mcp-auth-go/transport/mcpauth"
+  "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 v, err := auth.NewValidator(ctx, auth.ValidatorConfig{
-	JWKSURL:  "https://acme.okta.com/oauth2/aus123/v1/keys",
-	Issuer:   "https://acme.okta.com/oauth2/aus123",
-	Audience: "https://mcp.internal.acme.com",
+  JWKSURL:  "https://acme.okta.com/oauth2/aus123/v1/keys",
+  Issuer:   "https://acme.okta.com/oauth2/aus123",
+  Audience: "https://mcp.internal.acme.com",
 })
 // handle err
 
@@ -235,8 +265,8 @@ handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return
 // Required scopes go in Options.Scopes (not on the Validator) so a shortfall
 // gets the SDK's RFC 6750 insufficient_scope 403 challenge.
 secured := mcpauth.RequireBearerToken(v, &mcpauth.Options{
-	ResourceMetadataURL: "https://mcp.internal.acme.com/.well-known/oauth-protected-resource",
-	Scopes:              []string{"mcp:read"},
+  ResourceMetadataURL: "https://mcp.internal.acme.com/.well-known/oauth-protected-resource",
+  Scopes:              []string{"mcp:read"},
 })(handler)
 
 http.Handle("/mcp", secured)
@@ -248,7 +278,7 @@ Prefer `mcpauth.NewTokenVerifier(v)` if you'd rather call the SDK's
 **Status mapping.** The SDK's `TokenVerifier` contract has a single failure
 path — an error that unwraps to its `ErrInvalidToken` (HTTP 401). This adapter
 therefore maps **every** validation failure (bad signature, wrong audience,
-expired, *and* any `ClaimVerifier` rejection) to **401**, exposing only the
+expired, _and_ any `ClaimVerifier` rejection) to **401**, exposing only the
 public message. A **403** is reachable only via the SDK's own scope check, so
 enforce required scopes through `Options.Scopes` rather than `auth.RequireScopes`
 on the `Validator`.
@@ -356,7 +386,7 @@ dv := dpop.NewVerifier(dpop.Config{Nonce: ns})
 ```
 
 **Replay protection.** The default `MemoryReplayCache` stores `jti+htu` pairs
-inside the process, so it cannot catch a proof replayed against a *different*
+inside the process, so it cannot catch a proof replayed against a _different_
 instance behind a load balancer. For multi-instance deployments, supply the
 shared, Redis-backed `dpop/redisreplay` — a separate nested module, so `go-redis`
 stays out of the core module's dependency graph:
@@ -469,7 +499,7 @@ tok, err := p.Provide(ctx, exchange.ProvideRequest{
 
 **Role boundary.** This is the client/requesting-app side. The MCP **server**
 never receives the ID-JAG — the Resource Authorization Server validates it and
-the MCP server validates the *resulting access token* with the usual
+the MCP server validates the _resulting access token_ with the usual
 `auth.Validator` / `introspection.Validator` (including the RFC 8707 audience
 check the `resource` restriction relies on).
 
@@ -526,21 +556,59 @@ It emits the `mcp.tool.calls` / `mcp.broker.exchanges` counters and a span event
 on the caller's active span. The `MeterProvider` is injected (defaulting to the
 OTel global); no `TracerProvider` is needed.
 
+## Per-user rate limiting and sessions
+
+The HTTP middleware can rate-limit per authenticated user. Set
+`MiddlewareConfig.RateLimiter` to any implementation of the one-method
+`authhttp.RateLimiter` interface; the middleware keys it on the token's
+`Subject`, and a rejection returns `ErrRateLimitExceeded` (429) with a
+`Retry-After` header. The library ships the interface, not an implementation, so
+you plug in your own (a token bucket, a Redis counter, or a fake in tests)
+without the middleware depending on it. `MiddlewareConfig.Scopes` advertises the
+scopes your verifiers require in the RFC 6750 `scope` challenge on an
+`insufficient_scope` 403.
+
+```go
+mw := authhttp.MiddlewareConfig{
+  Validator:   v,
+  Logger:      logger,
+  RateLimiter: myLimiter, // Allow(key string, now time.Time) (bool, time.Duration)
+  Scopes:      []string{"mcp:read", "mcp:write"},
+}.Middleware()
+```
+
+Separately, the core package offers a transport-neutral per-user concurrency cap.
+`auth.NewMemorySessionStore` bounds how many sessions a single `Subject` may hold
+open at once and applies a sliding inactivity timeout; opening one past the cap
+returns `ErrSessionLimitExceeded` (429). It is not authentication (every request
+must still validate its bearer token); it only bounds concurrency, and you wire
+it into your own handler rather than the middleware applying it automatically.
+
+```go
+store := auth.NewMemorySessionStore(auth.SessionConfig{
+  MaxConcurrentPerUser: 3,
+  Timeout:              30 * time.Minute,
+}, nil) // nil idFn => cryptographically-random session ids
+
+id, err := store.Open(claims.Subject, time.Now())
+// errors.Is(err, auth.ErrSessionLimitExceeded) => the user is at the cap
+```
+
 ## Error model
 
 Failures are typed `*auth.Error` values that map to HTTP statuses and stay
 distinguishable with `errors.Is`:
 
-| Sentinel | Code | Status | Meaning |
-|----------|------|--------|---------|
-| `ErrMissingToken` | `missing_token` | 401 | no/!Bearer Authorization header |
-| `ErrInvalidToken` | `invalid_token` | 401 | bad signature, `iss`/`aud`, malformed, JWKS down |
-| `ErrExpiredToken` | `expired_token` | 401 | `exp` in the past |
-| `ErrInvalidDPoPProof` | `invalid_dpop_proof` | 401 | DPoP proof missing, invalid, replayed, or key mismatch |
-| `ErrForbidden` | `forbidden` | 403 | valid token, but a verifier rejected it |
-| `ErrInsufficientScope` | `insufficient_scope` | 403 | valid token, missing a required scope |
-| `ErrSessionLimitExceeded` | `session_limit_exceeded` | 429 | per-user concurrency cap hit |
-| `ErrRateLimitExceeded` | `rate_limit_exceeded` | 429 | per-user rate limit hit |
+| Sentinel                  | Code                     | Status | Meaning                                                |
+| ------------------------- | ------------------------ | ------ | ------------------------------------------------------ |
+| `ErrMissingToken`         | `missing_token`          | 401    | no/!Bearer Authorization header                        |
+| `ErrInvalidToken`         | `invalid_token`          | 401    | bad signature, `iss`/`aud`, malformed, JWKS down       |
+| `ErrExpiredToken`         | `expired_token`          | 401    | `exp` in the past                                      |
+| `ErrInvalidDPoPProof`     | `invalid_dpop_proof`     | 401    | DPoP proof missing, invalid, replayed, or key mismatch |
+| `ErrForbidden`            | `forbidden`              | 403    | valid token, but a verifier rejected it                |
+| `ErrInsufficientScope`    | `insufficient_scope`     | 403    | valid token, missing a required scope                  |
+| `ErrSessionLimitExceeded` | `session_limit_exceeded` | 429    | per-user concurrency cap hit                           |
+| `ErrRateLimitExceeded`    | `rate_limit_exceeded`    | 429    | per-user rate limit hit                                |
 
 The wrapped diagnostic `Cause` is logged but never serialized into the response
 body.

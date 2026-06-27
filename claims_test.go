@@ -20,22 +20,22 @@ func TestClaimsConfirmation(t *testing.T) {
 		{name: "cnf absent leaves it empty", cnf: nil, want: ""},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			tok, err := jwt.NewBuilder().Subject("user-1").Build()
 			if err != nil {
-				t.Fatalf("build token: %v", err)
+				st.Fatalf("build token: %v", err)
 			}
 			if tc.cnf != nil {
 				if err := tok.Set("cnf", tc.cnf); err != nil {
-					t.Fatalf("set cnf: %v", err)
+					st.Fatalf("set cnf: %v", err)
 				}
 			}
 			c := claimsFromToken(tok)
 			if c.Confirmation != tc.want {
-				t.Errorf("Confirmation = %q; want %q", c.Confirmation, tc.want)
+				st.Errorf("Confirmation = %q; want %q", c.Confirmation, tc.want)
 			}
 			if _, ok := c.Raw["cnf"]; ok {
-				t.Error("cnf must not leak into Raw")
+				st.Error("cnf must not leak into Raw")
 			}
 		})
 	}

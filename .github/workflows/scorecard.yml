@@ -1,0 +1,61 @@
+# OpenSSF Scorecard: an automated, public assessment of this project's security
+# posture (branch protection, signed releases, pinned dependencies, code review,
+# dangerous workflow patterns, and more). publish_results makes the score public
+# and enables the README badge - a verifiable trust signal for an auth library.
+#
+# Runs on push to main and weekly (not on PRs: it needs id-token: write, which
+# is unavailable to fork PRs). Some checks (Branch-Protection, Signed-Releases)
+# score low until the repo settings in SECURITY.md are configured - expected.
+name: Scorecard
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "13 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # Needed to upload results to the code-scanning dashboard.
+      security-events: write
+      # Needed to publish results and get a public OpenSSF Scorecard badge.
+      id-token: write
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Run Scorecard analysis
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - name: Upload SARIF artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scorecard-results
+          path: results.sarif
+          retention-days: 5
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: results.sarif
+          category: scorecard

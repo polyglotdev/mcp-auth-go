@@ -1,8 +1,10 @@
 # CodeQL static analysis for Go, results published to the Security tab.
 #
-# build-mode: none analyzes source directly with no build step, which cleanly
-# covers all four Go modules at once (a build-based mode would stop at nested
-# go.mod boundaries - see spec edge case E3) and avoids fighting the vendor dir.
+# The Go extractor does not support build-mode: none, so we use build-mode:
+# manual and build every module explicitly. autobuild would build only the root
+# module (`go build ./...` stops at nested go.mod boundaries), silently skipping
+# the other three - the under-coverage trap from spec edge cases E1/E3. The
+# manual build loop below guarantees all four modules enter the CodeQL database.
 # CodeQL uploads findings to code scanning; it does not fail the PR (report-only).
 name: CodeQL
 
@@ -40,12 +42,26 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: false
       - name: Initialize CodeQL
         uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           languages: go
-          build-mode: none
+          build-mode: manual
           config-file: ./.github/codeql/codeql-config.yml
+      - name: Build all modules (traced by CodeQL)
+        # Build every module so all four enter the CodeQL database. Keep this list
+        # in sync with Makefile GO_MODULE_DIRS and the ci.yml matrix.
+        run: |
+          set -euo pipefail
+          for dir in . transport/mcpauth audit/otel dpop/redisreplay; do
+            echo "==> go build ($dir)"
+            (cd "$dir" && go build ./...)
+          done
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:

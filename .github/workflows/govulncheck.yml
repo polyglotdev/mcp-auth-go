@@ -1,0 +1,83 @@
+# Go vulnerability scanning with govulncheck (the Go team's official tool),
+# run per module. govulncheck uses call-graph reachability, so it reports only
+# vulnerabilities your code can actually reach, keeping false positives low.
+#
+# Policy: govulncheck is BLOCKING (a reachable vulnerability fails the build).
+# SARIF is also uploaded to the Security tab for tracking; on fork PRs the upload
+# is skipped (no security-events: write there) but the blocking gate still runs.
+#
+# The govulncheck binary is installed via `go install ...@v1.1.4`, which is
+# verified through the Go module checksum database (sum.golang.org) - no opaque
+# binary download. Go version comes from go.mod so it matches the library.
+name: govulncheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so a newly disclosed CVE in an unchanged dependency is still caught.
+    - cron: "27 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: govulncheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  govulncheck:
+    name: govulncheck (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { dir: ".", name: "root" }
+          - { dir: "transport/mcpauth", name: "transport-mcpauth" }
+          - { dir: "audit/otel", name: "audit-otel" }
+          - { dir: "dpop/redisreplay", name: "dpop-redisreplay" }
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: ${{ matrix.dir }}/go.sum
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+      - name: Run govulncheck (SARIF)
+        id: sarif
+        continue-on-error: true
+        working-directory: ${{ matrix.dir }}
+        # Plain invocation works correctly under vendoring (verified): govulncheck
+        # reads module versions from vendor/modules.txt and reports reachability.
+        # See spec edge case E2.
+        run: |
+          govulncheck -format sarif ./... \
+            > "${{ github.workspace }}/govulncheck-${{ matrix.name }}.sarif"
+      - name: Upload SARIF to code scanning
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: govulncheck-${{ matrix.name }}.sarif
+          category: govulncheck-${{ matrix.name }}
+      - name: Fail on reachable vulnerabilities
+        working-directory: ${{ matrix.dir }}
+        # Text mode exits non-zero when a reachable vulnerability is found; this is
+        # the blocking gate, independent of the SARIF upload above.
+        run: govulncheck ./...

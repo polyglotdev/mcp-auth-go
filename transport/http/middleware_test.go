@@ -14,7 +14,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -173,13 +172,13 @@ func TestMiddlewareRejectsNonBearer(t *testing.T) {
 		{name: "bare bearer", header: "Bearer"},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/mcp", nil)
 			req.Header.Set("Authorization", tc.header)
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
 			if rr.Code != http.StatusUnauthorized {
-				t.Errorf("header %q: status = %d, want 401", tc.header, rr.Code)
+				st.Errorf("header %q: status = %d, want 401", tc.header, rr.Code)
 			}
 		})
 	}
@@ -560,31 +559,26 @@ func assertJSONError(t *testing.T, rr *httptest.ResponseRecorder, wantCode strin
 	}
 }
 
-// TestSetRetryAfterRoundsUp proves a sub-second Retry-After rounds up to 1.
-func TestSetRetryAfterRoundsUp(t *testing.T) {
-	w := httptest.NewRecorder()
-	setRetryAfter(w, 100*time.Millisecond)
-	if got := w.Header().Get("Retry-After"); got != "1" {
-		t.Errorf("Retry-After = %q, want 1", got)
-	}
-}
-
-// TestSetRetryAfterOmitsForZeroOrNegative proves zero or negative durations
-// leave Retry-After unset.
-func TestSetRetryAfterOmitsForZeroOrNegative(t *testing.T) {
+// TestSetRetryAfter proves Retry-After is emitted as a non-negative integer
+// (RFC 9110), rounding fractional seconds up, and is omitted entirely for zero
+// or negative durations.
+func TestSetRetryAfter(t *testing.T) {
 	tests := []struct {
 		name string
 		d    time.Duration
+		want string // "" => the header must be unset
 	}{
-		{name: "zero", d: 0},
-		{name: "negative one second", d: -time.Second},
+		{name: "sub-second rounds up to 1", d: 100 * time.Millisecond, want: "1"},
+		{name: "fractional rounds up", d: 7*time.Second + 500*time.Millisecond, want: "8"},
+		{name: "zero is omitted", d: 0, want: ""},
+		{name: "negative is omitted", d: -time.Second, want: ""},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			w := httptest.NewRecorder()
 			setRetryAfter(w, tc.d)
-			if got := w.Header().Get("Retry-After"); got != "" {
-				t.Errorf("d=%v: Retry-After = %q, want empty", tc.d, got)
+			if got := w.Header().Get("Retry-After"); got != tc.want {
+				st.Errorf("d=%v: Retry-After = %q, want %q", tc.d, got, tc.want)
 			}
 		})
 	}
@@ -608,30 +602,19 @@ func TestExtractBearer(t *testing.T) {
 		{name: "only spaces", header: "Bearer    ", want: "", wantErr: true},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			if tc.header != "" {
 				req.Header.Set("Authorization", tc.header)
 			}
 			tok, err := extractBearer(req)
 			if (err != nil) != tc.wantErr {
-				t.Fatalf("err = %v, wantErr=%v", err, tc.wantErr)
+				st.Fatalf("err = %v, wantErr=%v", err, tc.wantErr)
 			}
 			if !tc.wantErr && tok != tc.want {
-				t.Errorf("token = %q, want %q", tok, tc.want)
+				st.Errorf("token = %q, want %q", tok, tc.want)
 			}
 		})
-	}
-}
-
-// TestRetryAfterIsInteger proves Retry-After parses as a non-negative integer
-// per RFC 9110 and that fractional seconds round up.
-func TestRetryAfterIsInteger(t *testing.T) {
-	w := httptest.NewRecorder()
-	setRetryAfter(w, 7*time.Second+500*time.Millisecond)
-	got := w.Header().Get("Retry-After")
-	if n, err := strconv.Atoi(got); err != nil || n != 8 {
-		t.Errorf("Retry-After = %q, want \"8\" (7.5s rounds up)", got)
 	}
 }
 

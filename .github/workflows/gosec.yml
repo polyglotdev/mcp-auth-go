@@ -1,0 +1,65 @@
+# gosec SAST, run per module, results published to the Security tab as SARIF.
+#
+# Policy: REPORT-ONLY for now (-no-fail). gosec also runs as a golangci-lint
+# linter for fast local feedback; this standalone job exists so findings land in
+# the Security tab with tracking/dismissal and uniform multi-module coverage.
+# Promote to blocking (drop -no-fail) once the baseline is reviewed and clean.
+name: gosec
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gosec-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gosec:
+    name: gosec (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { dir: ".", name: "root" }
+          - { dir: "transport/mcpauth", name: "transport-mcpauth" }
+          - { dir: "audit/otel", name: "audit-otel" }
+          - { dir: "dpop/redisreplay", name: "dpop-redisreplay" }
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: ${{ matrix.dir }}/go.sum
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.27.1
+      - name: Run gosec (SARIF, report-only)
+        working-directory: ${{ matrix.dir }}
+        run: |
+          gosec -no-fail -exclude-dir=vendor -fmt sarif \
+            -out "${{ github.workspace }}/gosec-${{ matrix.name }}.sarif" ./...
+      - name: Upload SARIF to code scanning
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: gosec-${{ matrix.name }}.sarif
+          category: gosec-${{ matrix.name }}

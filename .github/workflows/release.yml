@@ -1,0 +1,60 @@
+# Release integrity: when a v* tag is pushed, re-run the full CI gate as a
+# precondition, then generate a dependency SBOM and a signed build-provenance
+# attestation and attach them to the GitHub Release. This gives every published
+# version a transparent, tamper-evident record of what it contains and how it
+# was produced.
+#
+# Note: mcp-auth-go is a pure library consumed via `go get`; there are no binary
+# artifacts to sign. The SBOM (dependency transparency) and provenance are the
+# meaningful supply-chain signals here - see spec O2.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Do not cancel an in-progress release.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: gate
+    uses: ./.github/workflows/ci.yml
+
+  provenance:
+    name: SBOM + provenance
+    needs: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # Attach SBOM to the GitHub Release.
+      contents: write
+      # Mint the OIDC token used to sign the attestation.
+      id-token: write
+      # Write the build-provenance attestation.
+      attestations: write
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+      - name: Check out
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          path: "."
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-release-assets: true
+      - name: Attest build provenance for the SBOM
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: sbom.cdx.json

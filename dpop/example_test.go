@@ -3,6 +3,8 @@ package dpop_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -114,4 +116,28 @@ func TestNoTokenInErrorSurface(t *testing.T) {
 // isInvalidDPoP reports whether err matches auth.ErrInvalidDPoPProof by code.
 func isInvalidDPoP(err error) bool {
 	return errors.Is(err, auth.ErrInvalidDPoPProof)
+}
+
+// ExampleSignedNonce shows the stateless resource-server DPoP nonce. Issue mints
+// an opaque, unpredictable nonce stamped at a time; Validate accepts it within
+// its lifetime and rejects it once stale. A nonce is time-window valid, not
+// single-use, so it complements -- never replaces -- the jti ReplayCache.
+func ExampleSignedNonce() {
+	// The secret comes from your secrets manager and must be at least 32 bytes.
+	ns, err := dpop.NewSignedNonce([]byte("0123456789abcdef0123456789abcdef"), time.Minute)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	issued := time.Unix(1_000_000, 0)
+	nonce := ns.Issue(issued)
+
+	fmt.Println("fresh:", ns.Validate(nonce, issued))
+	fmt.Println("within lifetime:", ns.Validate(nonce, issued.Add(59*time.Second)))
+	fmt.Println("stale:", ns.Validate(nonce, issued.Add(2*time.Minute)))
+
+	// Output:
+	// fresh: true
+	// within lifetime: true
+	// stale: false
 }

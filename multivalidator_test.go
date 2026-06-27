@@ -112,19 +112,19 @@ func TestMultiValidatorRouting(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			claims, err := mv.Validate(context.Background(), tc.token)
 			if tc.wantErr != nil {
 				if !errors.Is(err, tc.wantErr) {
-					t.Fatalf("err = %v, want %v", err, tc.wantErr)
+					st.Fatalf("err = %v, want %v", err, tc.wantErr)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+				st.Fatalf("unexpected error: %v", err)
 			}
 			if claims.Issuer != tc.wantIssuer {
-				t.Errorf("Issuer = %q, want %q", claims.Issuer, tc.wantIssuer)
+				st.Errorf("Issuer = %q, want %q", claims.Issuer, tc.wantIssuer)
 			}
 		})
 	}
@@ -182,16 +182,16 @@ func TestNewMultiValidatorValidation(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			_, err := auth.NewMultiValidator(ctx, auth.MultiValidatorConfig{Issuers: tc.issuers})
 			if tc.wantErr == "" {
 				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
+					st.Fatalf("unexpected error: %v", err)
 				}
 				return
 			}
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
-				t.Errorf("err = %v, want containing %q", err, tc.wantErr)
+				st.Errorf("err = %v, want containing %q", err, tc.wantErr)
 			}
 		})
 	}
@@ -288,17 +288,17 @@ func TestMultiValidatorVerifierPropagation(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			token := jA.Mint(t, tc.claims)
+		t.Run(tc.name, func(st *testing.T) {
+			token := jA.Mint(st, tc.claims)
 			_, err := mv.Validate(context.Background(), token)
 			if tc.wantErr == nil {
 				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
+					st.Fatalf("unexpected error: %v", err)
 				}
 				return
 			}
 			if !errors.Is(err, tc.wantErr) {
-				t.Errorf("err = %v, want %v", err, tc.wantErr)
+				st.Errorf("err = %v, want %v", err, tc.wantErr)
 			}
 		})
 	}
@@ -317,10 +317,8 @@ func TestMultiValidatorConcurrency(t *testing.T) {
 	const goroutines = 16
 	var wg sync.WaitGroup
 	errs := make(chan error, goroutines)
-	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+	for i := range goroutines {
+		wg.Go(func() {
 			token, wantIss := tokenA, miIssuerA
 			if i%2 == 1 {
 				token, wantIss = tokenB, miIssuerB
@@ -333,7 +331,7 @@ func TestMultiValidatorConcurrency(t *testing.T) {
 			if claims.Issuer != wantIss {
 				errs <- fmt.Errorf("goroutine %d: Issuer = %q, want %q", i, claims.Issuer, wantIss)
 			}
-		}(i)
+		})
 	}
 	wg.Wait()
 	close(errs)

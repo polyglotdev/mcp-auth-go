@@ -1,0 +1,23 @@
+# Code ownership: required reviewers per area. With branch protection enabled
+# (see SECURITY.md), a change to CI, security policy, or the module graph cannot
+# be self-merged - a compromised or careless PR to the pipeline needs sign-off.
+
+# Default owner for everything.
+* @polyglotdev
+
+# CI/CD and supply-chain configuration: the highest-leverage attack surface.
+/.github/ @polyglotdev
+
+# Security policy and ownership itself.
+/SECURITY.md @polyglotdev
+/.github/CODEOWNERS @polyglotdev
+
+# Module graph and lockfiles across every module.
+/go.mod @polyglotdev
+/go.sum @polyglotdev
+/transport/mcpauth/go.mod @polyglotdev
+/transport/mcpauth/go.sum @polyglotdev
+/audit/otel/go.mod @polyglotdev
+/audit/otel/go.sum @polyglotdev
+/dpop/redisreplay/go.mod @polyglotdev
+/dpop/redisreplay/go.sum @polyglotdev

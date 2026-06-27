@@ -53,15 +53,15 @@ func TestVerifyRequiredStringClaims(t *testing.T) {
 		{name: "empty requirements is a no-op", required: map[string]string{}, claims: map[string]any{}},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			v := auth.VerifyRequiredStringClaims(tc.required)
-			err := v(context.Background(), tokenWith(t, tc.claims))
+			err := v(context.Background(), tokenWith(st, tc.claims))
 			if tc.wantForbidden {
-				assertForbidden(t, err)
+				assertForbidden(st, err)
 				return
 			}
 			if err != nil {
-				t.Errorf("verify = %v, want nil", err)
+				st.Errorf("verify = %v, want nil", err)
 			}
 		})
 	}
@@ -85,9 +85,9 @@ func TestVerifyRequiredStringClaimsWrong(t *testing.T) {
 
 	v := auth.VerifyRequiredStringClaims(map[string]string{"tier": "internal"})
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			tok := tokenWith(t, map[string]any{"tier": tc.value})
-			assertForbidden(t, v(context.Background(), tok))
+		t.Run(tc.name, func(st *testing.T) {
+			tok := tokenWith(st, map[string]any{"tier": tc.value})
+			assertForbidden(st, v(context.Background(), tok))
 		})
 	}
 }
@@ -139,15 +139,15 @@ func TestRequireScopes(t *testing.T) {
 		{name: "empty requirement is a no-op", required: nil, claims: map[string]any{}},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			v := auth.RequireScopes(tc.required...)
-			err := v(context.Background(), tokenWith(t, tc.claims))
+			err := v(context.Background(), tokenWith(st, tc.claims))
 			if tc.wantInsufficientScope {
-				assertInsufficientScope(t, err)
+				assertInsufficientScope(st, err)
 				return
 			}
 			if err != nil {
-				t.Errorf("verify = %v, want nil", err)
+				st.Errorf("verify = %v, want nil", err)
 			}
 		})
 	}

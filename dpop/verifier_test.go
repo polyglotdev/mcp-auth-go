@@ -77,27 +77,34 @@ func TestEnforceTruthTable(t *testing.T) {
 		})
 	}
 
-	// Unbound + Opportunistic → pass (plain bearer).
-	if err := mk(dpop.Opportunistic).Enforce(context.Background(), dpop.Input{}); err != nil {
-		t.Fatalf("opportunistic unbound: %v", err)
+	tests := []struct {
+		name    string
+		mode    dpop.Mode
+		in      dpop.Input
+		wantErr bool // true => expect ErrInvalidDPoPProof
+	}{
+		// Unbound + Opportunistic → pass (plain bearer).
+		{name: "unbound opportunistic passes", mode: dpop.Opportunistic, in: dpop.Input{}, wantErr: false},
+		// Unbound + Require → reject (§M5 / §E4).
+		{name: "unbound require rejects", mode: dpop.Require, in: dpop.Input{}, wantErr: true},
+		// Bound + 0 proofs → reject (§7.2 downgrade, §E1).
+		{name: "bound zero proofs rejects (downgrade)", mode: dpop.Opportunistic, in: dpop.Input{BoundJKT: "x"}, wantErr: true},
+		// Bound + >1 proofs → reject (§E2).
+		{name: "bound multiple proofs rejects", mode: dpop.Opportunistic, in: dpop.Input{BoundJKT: "x", Proofs: []string{"a", "b"}}, wantErr: true},
 	}
-
-	// Unbound + Require → reject (§M5 / §E4).
-	if err := mk(dpop.Require).Enforce(context.Background(), dpop.Input{}); !errors.Is(err, auth.ErrInvalidDPoPProof) {
-		t.Fatalf("require unbound: want ErrInvalidDPoPProof, got %v", err)
-	}
-
-	// Bound + 0 proofs → reject (§7.2 downgrade, §E1).
-	if err := mk(dpop.Opportunistic).Enforce(context.Background(), dpop.Input{BoundJKT: "x"}); !errors.Is(err, auth.ErrInvalidDPoPProof) {
-		t.Fatalf("downgrade (0 proofs): want ErrInvalidDPoPProof, got %v", err)
-	}
-
-	// Bound + >1 proofs → reject (§E2).
-	if err := mk(dpop.Opportunistic).Enforce(context.Background(), dpop.Input{
-		BoundJKT: "x",
-		Proofs:   []string{"a", "b"},
-	}); !errors.Is(err, auth.ErrInvalidDPoPProof) {
-		t.Fatalf(">1 proof: want ErrInvalidDPoPProof, got %v", err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(st *testing.T) {
+			err := mk(tc.mode).Enforce(context.Background(), tc.in)
+			if tc.wantErr {
+				if !errors.Is(err, auth.ErrInvalidDPoPProof) {
+					st.Fatalf("want ErrInvalidDPoPProof, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				st.Fatalf("want accepted, got %v", err)
+			}
+		})
 	}
 }
 
@@ -228,17 +235,17 @@ func TestVerifierNonceConfigured(t *testing.T) {
 		{name: "without nonce source", cfg: dpop.Config{}, wantConfigured: false},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+		t.Run(tt.name, func(st *testing.T) {
 			v := dpop.NewVerifier(tt.cfg)
 			if got := v.NonceConfigured(); got != tt.wantConfigured {
-				t.Errorf("NonceConfigured() = %v, want %v", got, tt.wantConfigured)
+				st.Errorf("NonceConfigured() = %v, want %v", got, tt.wantConfigured)
 			}
 			gotNonce := v.IssueNonce(now)
 			if tt.wantConfigured && gotNonce == "" {
-				t.Error("IssueNonce() = empty, want a minted nonce")
+				st.Error("IssueNonce() = empty, want a minted nonce")
 			}
 			if !tt.wantConfigured && gotNonce != "" {
-				t.Errorf("IssueNonce() = %q, want empty", gotNonce)
+				st.Errorf("IssueNonce() = %q, want empty", gotNonce)
 			}
 		})
 	}

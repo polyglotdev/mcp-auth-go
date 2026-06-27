@@ -22,17 +22,17 @@ func TestHasScopes(t *testing.T) {
 		{name: "no requirement is a no-op", required: nil, granted: nil, wantErr: false},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			authz := auth.HasScopes(tc.required...)
 			err := authz(context.Background(), &auth.Claims{Scopes: tc.granted})
 			if tc.wantErr {
 				if !errors.Is(err, auth.ErrInsufficientScope) {
-					t.Fatalf("err = %v, want ErrInsufficientScope", err)
+					st.Fatalf("err = %v, want ErrInsufficientScope", err)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+				st.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}
@@ -50,16 +50,16 @@ func TestHasAnyScope(t *testing.T) {
 		{name: "no options is a no-op", any: nil, granted: nil, wantErr: false},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			err := auth.HasAnyScope(tc.any...)(context.Background(), &auth.Claims{Scopes: tc.granted})
 			if tc.wantErr {
 				if !errors.Is(err, auth.ErrInsufficientScope) {
-					t.Fatalf("err = %v, want ErrInsufficientScope", err)
+					st.Fatalf("err = %v, want ErrInsufficientScope", err)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+				st.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}
@@ -77,16 +77,16 @@ func TestHasClaim(t *testing.T) {
 		{name: "missing claim", claim: "department", want: "cardiology", wantErr: true},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			err := auth.HasClaim(tc.claim, tc.want)(context.Background(), claims)
 			if tc.wantErr {
 				if !errors.Is(err, auth.ErrForbidden) {
-					t.Fatalf("err = %v, want ErrForbidden", err)
+					st.Fatalf("err = %v, want ErrForbidden", err)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+				st.Fatalf("unexpected error: %v", err)
 			}
 		})
 	}
@@ -105,16 +105,16 @@ func TestAllOf(t *testing.T) {
 		{name: "empty vacuously allows", authorizers: nil, wantErr: false},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			err := auth.AllOf(tc.authorizers...)(context.Background(), &auth.Claims{})
 			if tc.wantErr {
 				if !errors.Is(err, auth.ErrForbidden) {
-					t.Errorf("AllOf = %v, want ErrForbidden", err)
+					st.Errorf("AllOf = %v, want ErrForbidden", err)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("AllOf = %v, want nil", err)
+				st.Errorf("AllOf = %v, want nil", err)
 			}
 		})
 	}
@@ -144,16 +144,16 @@ func TestAnyOf(t *testing.T) {
 		{name: "empty vacuously denies", authorizers: nil, wantErr: true},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			err := auth.AnyOf(tc.authorizers...)(context.Background(), &auth.Claims{})
 			if tc.wantErr {
 				if !errors.Is(err, auth.ErrForbidden) {
-					t.Errorf("AnyOf = %v, want ErrForbidden", err)
+					st.Errorf("AnyOf = %v, want ErrForbidden", err)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("AnyOf = %v, want nil", err)
+				st.Errorf("AnyOf = %v, want nil", err)
 			}
 		})
 	}
@@ -169,16 +169,16 @@ func TestAllowAllDenyAll(t *testing.T) {
 		{name: "DenyAll denies", authz: auth.DenyAll, wantErr: true},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			err := tc.authz(context.Background(), &auth.Claims{})
 			if tc.wantErr {
 				if !errors.Is(err, auth.ErrForbidden) {
-					t.Errorf("%s = %v, want ErrForbidden", tc.name, err)
+					st.Errorf("%s = %v, want ErrForbidden", tc.name, err)
 				}
 				return
 			}
 			if err != nil {
-				t.Errorf("%s = %v, want nil", tc.name, err)
+				st.Errorf("%s = %v, want nil", tc.name, err)
 			}
 		})
 	}

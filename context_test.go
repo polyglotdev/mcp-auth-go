@@ -30,10 +30,10 @@ func TestRawTokenFrom(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.name, func(st *testing.T) {
 			got, ok := RawTokenFrom(tc.ctx)
 			if got != tc.wantToken || ok != tc.wantOK {
-				t.Fatalf("RawTokenFrom = %q, %v; want %q, %v", got, ok, tc.wantToken, tc.wantOK)
+				st.Fatalf("RawTokenFrom = %q, %v; want %q, %v", got, ok, tc.wantToken, tc.wantOK)
 			}
 		})
 	}

@@ -7,7 +7,7 @@ replace github.com/polyglotdev/mcp-auth-go => ../../
 require (
 	github.com/lestrrat-go/jwx/v2 v2.1.6
 	github.com/modelcontextprotocol/go-sdk v1.6.1
-	github.com/polyglotdev/mcp-auth-go v0.0.0
+	github.com/polyglotdev/mcp-auth-go v0.1.0
 )
 
 require (
